@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0a0f24"><title>מי האימפוסטר?</title>
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0a0f24;--card:#141b3a;--pu:#8b5cf6;--tq:#2dd4bf;--tx:#eef;--mu:#8e98c9}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;min-height:100%;background:radial-gradient(circle at 50% 0,#1b1650,var(--bg) 60%) fixed;color:var(--tx);font-family:Heebo,system-ui,sans-serif;overflow-x:hidden}
+#app{max-width:480px;margin:0 auto;padding:max(20px,env(safe-area-inset-top)) 18px max(20px,env(safe-area-inset-bottom));min-height:100vh;display:flex;flex-direction:column;gap:14px;justify-content:center}
+h1{font-size:44px;font-weight:900;text-align:center;margin:0;background:linear-gradient(90deg,var(--pu),var(--tq));-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 0 14px #8b5cf655);animation:in .7s}
+h2{margin:0;text-align:center}.mu{color:var(--mu);text-align:center;margin:0}
+.card{background:var(--card);border-radius:22px;padding:18px;display:flex;flex-direction:column;gap:12px;box-shadow:0 0 30px #8b5cf61a;animation:in .4s}
+input,select{width:100%;font:inherit;font-size:18px;padding:14px;border-radius:14px;border:2px solid #2a3470;background:#0d1330;color:var(--tx);text-align:center}
+button{font:inherit;font-weight:700;font-size:19px;padding:16px;border:0;border-radius:16px;color:#fff;background:linear-gradient(90deg,var(--pu),#6d5cf6);box-shadow:0 0 18px #8b5cf655;cursor:pointer;transition:transform .1s}
+button:active{transform:scale(.96)}button.s{background:#222c5c;box-shadow:none}button.t{background:linear-gradient(90deg,var(--tq),#14b8a6);color:#042}button:disabled{opacity:.4}
+.code{font-size:56px;font-weight:900;letter-spacing:10px;text-align:center;color:var(--tq);text-shadow:0 0 18px var(--tq);direction:ltr}
+.pl{display:flex;justify-content:space-between;padding:10px 14px;background:#0d1330;border-radius:12px;animation:in .3s}
+.off{opacity:.4}.word{font-size:54px;font-weight:900;text-align:center;color:var(--tq);text-shadow:0 0 20px var(--tq);padding:30px 0;animation:flip .6s}
+.err{color:#ff8a9a;text-align:center;min-height:20px}.row{display:flex;gap:8px}.row>*{flex:1}
+#mt{position:fixed;top:max(10px,env(safe-area-inset-top));left:10px;width:auto;padding:8px 12px;font-size:18px}
+@keyframes in{from{opacity:0;transform:translateY(12px)}}@keyframes flip{from{opacity:0;transform:rotateY(90deg) scale(.7)}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style></head><body><button id="mt" class="s" aria-label="סאונד">🔊</button><div id="app"></div>
+<script>
+const $=s=>document.querySelector(s),app=$('#app');
+const L={easy:'קל',medium:'בינוני',hard:'קשה'};
+let pid=localStorage.pid||(localStorage.pid=crypto.randomUUID()),S=null,ws,err='',shown=false,done=false,muted=localStorage.mute==='1',prev=null,ac;
+// סאונד (Web Audio)
+function tone(f,d=.12,type='sine',v=.15,t0=0){if(muted)return;try{ac=ac||new (window.AudioContext||webkitAudioContext)();const o=ac.createOscillator(),g=ac.createGain(),t=ac.currentTime+t0;o.type=type;o.frequency.value=f;g.gain.setValueAtTime(v,t);g.gain.exponentialRampToValueAtTime(.001,t+d);o.connect(g).connect(ac.destination);o.start(t);o.stop(t+d)}catch{}}
+const fx={click:()=>tone(520,.07,'triangle'),join:()=>{tone(660,.1);tone(880,.12,'sine',.15,.1)},mystery:()=>{tone(180,.6,'sawtooth',.08);tone(270,.6,'sine',.1,.1)},tense:()=>[0,.25,.5].forEach(t=>tone(140+t*200,.2,'square',.07,t)),win:()=>[523,659,784,1047].forEach((f,i)=>tone(f,.25,'triangle',.15,i*.12))};
+$('#mt').onclick=()=>{muted=!muted;localStorage.mute=muted?'1':'0';$('#mt').textContent=muted?'🔇':'🔊';fx.click()};$('#mt').textContent=muted?'🔇':'🔊';
+// חיבור
+function connect(first){
+  ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host);
+  ws.onopen=()=>{const c=sessionStorage.code;if(c)ws.send(JSON.stringify({type:'join',code:c,name:localStorage.name,pid}))};
+  ws.onmessage=e=>{const m=JSON.parse(e.data);
+    if(m.type==='err'){err=m.msg;if(m.fatal){sessionStorage.removeItem('code');S=null}render();return}
+    err='';sessionStorage.code=m.code;
+    if(prev&&m.players.length>prev.players.length&&m.phase==='lobby')fx.join();
+    if(m.phase==='round'&&(!prev||prev.phase!=='round')){shown=false;done=false;fx.tense()}
+    if(m.phase==='reveal'&&(!prev||prev.phase!=='reveal'))fx.win();
+    S=prev=m;render()};
+  ws.onclose=()=>setTimeout(()=>connect(),1500);
+}
+const tx=o=>ws.readyState===1&&ws.send(JSON.stringify(o));
+function go(type){fx.click();const name=$('#n').value.trim();localStorage.name=name;const code=$('#c')?.value.trim();
+  if(type==='join')sessionStorage.code=code;else sessionStorage.removeItem('code');
+  tx({type,name,code,pid});if(type==='create')fx.join()}
+function render(){
+  if(!S){app.innerHTML=`<h1>מי האימפוסטר?</h1><p class="mu">כולם מקבלים אותה מילה. חוץ מאחד...</p>
+  <div class="card"><input id="n" placeholder="הכינוי שלך" maxlength="12" value="${localStorage.name||''}">
+  <button onclick="go('create')">יצירת חדר</button><div class="mu">או</div>
+  <input id="c" placeholder="קוד חדר" inputmode="numeric" maxlength="6"><button class="t" onclick="go('join')">הצטרפות לחדר</button>
+  <div class="err">${err}</div></div>`;return}
+  const pl=S.players.map(p=>`<div class="pl ${p.on?'':'off'}"><span>${p.host?'👑 ':''}${esc(p.name)}</span><span>${S.phase==='round'?(p.ready?'✅':'⏳'):''}</span></div>`).join('');
+  if(S.phase==='lobby'){const st=S.settings,h=S.isHost;
+    app.innerHTML=`<p class="mu">קוד החדר</p><div class="code">${S.code}</div>
+    <div class="row"><button class="s" onclick="navigator.clipboard.writeText('${S.code}');fx.click()">📋 העתק</button><button class="s" onclick="share()">📤 שתף</button></div>
+    <div class="card"><b>שחקנים (${S.players.length})</b>${pl}</div>
+    ${h?`<div class="card"><select onchange="tx({type:'settings',category:this.value})"><option>הכל</option>${S.cats.map(c=>`<option ${c===st.category?'selected':''}>${c}</option>`).join('')}</select>
+    <select onchange="tx({type:'settings',difficulty:this.value})"><option value="הכל">כל הרמות</option>${Object.keys(L).map(k=>`<option value="${k}" ${k===st.difficulty?'selected':''}>${L[k]}</option>`).join('')}</select>
+    <select onchange="tx({type:'settings',impostors:this.value})">${[1,2,3].map(n=>`<option value="${n}" ${n===st.impostors?'selected':''}>${n} אימפוסטרים</option>`).join('')}</select>
+    <button onclick="fx.click();tx({type:'start'})" ${S.players.length<3?'disabled':''}>התחל משחק</button></div>`:'<p class="mu">ממתינים למארח...</p>'}
+    <div class="err">${err}</div>`;return}
+  if(S.phase==='round'){
+    const body=!shown?`<h2>🤫 רק אתה מסתכל!</h2><p class="mu">העבר את הטלפון למצב פרטי</p><button onclick="shown=true;fx.mystery();render()">גלה את המילה שלי</button>`
+    :`<div class="word">${[...S.word].map((c,i)=>`<span style="animation:in .4s ${i*.07}s both">${esc(c)}</span>`).join('')}</div>
+    <button class="s" onclick="shown=false;fx.click();render()">הסתר</button>
+    <button class="t" ${done?'disabled':''} onclick="done=true;fx.click();tx({type:'ready'})">${done?'מחכים לשאר ✅':'סיימתי לראות'}</button>`;
+    app.innerHTML=`<div class="card">${body}</div><div class="card"><b>מוכנים</b>${pl}</div>
+    ${S.isHost?`<button onclick="if(confirm('לחשוף את האימפוסטר?'))tx({type:'reveal'})">חשוף את האימפוסטר</button>`:''}`;return}
+  app.innerHTML=`<h2>🎭 האימפוסטר היה</h2><div class="word" style="font-size:40px">${S.reveal.impostors.map(esc).join(' ו-')}</div>
+  <div class="card"><p class="mu">המילה של כולם</p><h2>${esc(S.reveal.a)}</h2><p class="mu">המילה של האימפוסטר</p><h2>${esc(S.reveal.b)}</h2></div>
+  ${S.isHost?`<button class="t" onclick="fx.click();tx({type:'again'})">עוד סיבוב!</button>`:'<p class="mu">ממתינים למארח...</p>'}`;
+}
+function share(){const u=location.href;const t='בואו לשחק "מי האימפוסטר?" קוד: '+S.code+' '+u;navigator.share?navigator.share({text:t}).catch(()=>{}):navigator.clipboard.writeText(t)}
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+connect();render();
+</script></body></html>
